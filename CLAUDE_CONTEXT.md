@@ -1,69 +1,86 @@
 # Leila's Day - Project Context
 
 ## Overview
-Infant management app for tracking sleep, feed, diaper, play, meds, and pumping with predictive "what's next" scheduling.
+Infant management agent that watches, learns, and tells you what to do next. Zero overhead, one-tap logging, auto-generated insights.
 
-## Key Decisions
+## UX Review (Jan 2026)
+
+### What Failed (v1)
+- No onboarding - user lands on empty confusing screen
+- Abstract labels ("log", "next up") - developer-speak
+- No feedback - tap button, nothing visible happens
+- No visual hierarchy - everything equal weight
+- No state visibility - is baby sleeping? when was last feed?
+
+### Dieter Rams Critique
+> "The product doesn't talk. Minimalism hid the function. We have decoration disguised as simplicity."
+
+### New Design Principle
+**"One Glance, One Tap"** - The app answers ONE question: "What should I do next?"
+
+---
+
+## Key Decisions (v2 Redesign)
 
 ### Design Philosophy
-- **Dieter Rams minimalism** - calm, purposeful, invisible
-- Lowercase everything, no emojis in UI
-- Colors: #FAFAFA (background), #1A1A1A (text), #8B9A7D (accent - soft sage)
-- Typography: Inter, two weights only (regular + medium)
-- 8px spacing grid
+- **Function first** - Every element serves a clear purpose
+- **Human language** - "she's been awake 1h 40m" not "awake time"
+- **Hero Card** - ONE prominent action dominates the screen
+- **Progressive disclosure** - Agent learns, reveals patterns over time
+- Colors: #FAFAFA (background), #1A1A1A (text), #8B9A7D (accent)
+- Typography: Inter, two weights only
+- Lowercase everything, no emojis
 
-### Tech Stack
+### Three Tabs
+| Tab | Purpose |
+|-----|---------|
+| **now** | Hero card with THE action + coming up |
+| **history** | Day-by-day timeline, swipe between days |
+| **patterns** | Auto-generated insights, averages, typical day |
+
+### Agent Behavior
+- Day 1-2: "keep logging, learning your patterns..."
+- Day 3: First pattern insights appear
+- Day 7+: Full patterns dashboard with "your typical day"
+- Zero configuration - agent does all the work
+
+---
+
+## Tech Stack
 - **Frontend:** Next.js 14 + TypeScript + Tailwind CSS
-- **Backend:** Supabase (PostgreSQL + Auth + Real-time)
+- **Storage:** localStorage (Supabase later for cloud sync)
 - **PWA:** Installable, works offline
+- **Port:** 3003
 
-### Dev Server Port
-- **Use port 3003** (3000, 3001, 3002, 5173 are occupied)
+---
 
-### Core Features (MVP)
-1. One-tap event logging (sleep, feed, diaper, play, meds, pump)
-2. "What's next" predictions based on age + patterns
-3. Dashboard with predictions + quick log buttons
-4. History view (timeline)
-5. Google sign-in auth
-6. PWA installable
-
-### Event Types
-| Event | Data |
-|-------|------|
-| Sleep | start/end toggle, auto-duration |
-| Feed | type (bottle/breast/solid), amount, side for breast |
-| Diaper | wet/dirty/both |
-| Play | start/end toggle, auto-duration |
-| Meds | preset meds, one-tap log, next dose time |
-| Pump | start/end toggle, amount, side |
-
-### Age-Based Defaults (before pattern learning)
-- 0-3 months: Feed every 2-3h, wake windows 45-90min
-- 3-6 months: Feed every 3-4h, wake windows 1.5-2.5h
-- 6-12 months: Feed every 4h, wake windows 2-3.5h
-
-## File Structure
+## File Structure (v2)
 ```
 src/
 ├── app/
 │   ├── layout.tsx
-│   ├── page.tsx              # Dashboard
-│   ├── history/page.tsx
-│   └── settings/page.tsx
+│   ├── page.tsx              # Now tab (hero card)
+│   ├── onboarding/page.tsx   # First-run setup
+│   ├── history/page.tsx      # Day-by-day timeline
+│   └── patterns/page.tsx     # Auto-generated insights
 ├── components/
-│   ├── NextUp.tsx            # Predictions display
-│   ├── EventButton.tsx
-│   ├── QuickEntry/
-│   ├── Timeline.tsx
+│   ├── HeroCard.tsx          # The ONE action
+│   ├── ComingUp.tsx          # Secondary predictions
+│   ├── QuickLog.tsx          # Compact action buttons
+│   ├── TabNav.tsx            # now/history/patterns
+│   ├── Timeline.tsx          # Day's events
+│   ├── Toast.tsx             # Feedback confirmations
 │   └── DailySummary.tsx
 ├── lib/
-│   ├── supabase.ts
-│   ├── predictions.ts
-│   ├── wake-windows.ts
-│   ├── hooks/
+│   ├── storage.ts            # localStorage wrapper
+│   ├── humanize.ts           # Natural language
+│   ├── predictions.ts        # What's next engine
+│   ├── patterns.ts           # Pattern detection
+│   ├── wake-windows.ts       # Age-based defaults
 │   └── types.ts
 ```
+
+---
 
 ## Database Schema
 ```sql
@@ -76,9 +93,9 @@ events (
   metadata: jsonb,
   created_at
 )
-
-medications (id, baby_id, name, dose, frequency_hours)
 ```
+
+---
 
 ## GitHub
 - Repo: https://github.com/midokabbara/leilas-day

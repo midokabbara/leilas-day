@@ -1,110 +1,211 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Header } from '@/components/Header';
-import { NextUp } from '@/components/NextUp';
+import { HeroCard } from '@/components/HeroCard';
+import { ComingUp } from '@/components/ComingUp';
 import { QuickLog } from '@/components/QuickLog';
 import { DailySummary } from '@/components/DailySummary';
+import { TabNav } from '@/components/TabNav';
+import { ToastContainer } from '@/components/Toast';
+import {
+  getBaby,
+  getEvents,
+  addEvent,
+  updateEvent,
+  isOnboardingComplete,
+  getLastEventOfType,
+  getOngoingEvent,
+  getEventsForDay,
+} from '@/lib/storage';
+import { getHeroState } from '@/lib/humanize';
 import { getPredictions } from '@/lib/predictions';
-import { BabyEvent, EventType, Prediction } from '@/lib/types';
+import { Baby, BabyEvent, EventType } from '@/lib/types';
 
-// Demo data - will be replaced with Supabase
-const DEMO_BABY = {
-  name: "leila",
-  birthDate: new Date('2024-10-01'), // ~3 months old
-};
+type Tab = 'now' | 'history' | 'patterns';
+
+interface Toast {
+  id: string;
+  message: string;
+  onUndo?: () => void;
+}
 
 export default function Dashboard() {
+  const router = useRouter();
+  const [baby, setBaby] = useState<Baby | null>(null);
   const [events, setEvents] = useState<BabyEvent[]>([]);
-  const [predictions, setPredictions] = useState<Prediction[]>([]);
-  const [activeEvent, setActiveEvent] = useState<EventType | null>(null);
-  const [, setCurrentTime] = useState(new Date());
+  const [activeTab, setActiveTab] = useState<Tab>('now');
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Update time every minute for predictions
+  // Load data on mount
+  useEffect(() => {
+    if (!isOnboardingComplete()) {
+      router.push('/onboarding');
+      return;
+    }
+
+    const loadedBaby = getBaby();
+    const loadedEvents = getEvents();
+
+    setBaby(loadedBaby);
+    setEvents(loadedEvents);
+    setIsLoading(false);
+  }, [router]);
+
+  // Refresh events periodically
   useEffect(() => {
     const interval = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 60000);
+      setEvents(getEvents());
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  // Recalculate predictions when events change
-  useEffect(() => {
-    const newPredictions = getPredictions(events, DEMO_BABY.birthDate);
-    setPredictions(newPredictions);
-  }, [events]);
+  const showToast = useCallback((message: string, onUndo?: () => void) => {
+    const id = crypto.randomUUID();
+    setToasts((prev) => [...prev, { id, message, onUndo }]);
+  }, []);
 
-  const handleTapEvent = (type: EventType) => {
-    // For sleep/play, toggle active state
-    if (type === 'sleep' || type === 'play') {
-      if (activeEvent === type) {
-        // End the active event
-        setEvents((prev) => {
-          const updated = [...prev];
-          const activeIdx = updated.findIndex(
-            (e) => e.type === type && !e.endedAt
-          );
-          if (activeIdx !== -1) {
-            updated[activeIdx] = {
-              ...updated[activeIdx],
-              endedAt: new Date(),
-            };
-          }
-          return updated;
-        });
-        setActiveEvent(null);
-      } else {
-        // Start a new event
-        const newEvent: BabyEvent = {
-          id: crypto.randomUUID(),
-          babyId: '1',
-          type,
-          startedAt: new Date(),
-          endedAt: null,
-          metadata: {},
-          createdAt: new Date(),
-        };
-        setEvents((prev) => [...prev, newEvent]);
-        setActiveEvent(type);
-      }
+  const removeToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const handleSleepAction = useCallback(() => {
+    const ongoingSleep = getOngoingEvent('sleep');
+
+    if (ongoingSleep) {
+      // End sleep
+      updateEvent(ongoingSleep.id, { endedAt: new Date() });
+      setEvents(getEvents());
+      showToast('woke up!', () => {
+        updateEvent(ongoingSleep.id, { endedAt: null });
+        setEvents(getEvents());
+      });
     } else {
-      // For other events, just log immediately
+      // Start sleep
       const newEvent: BabyEvent = {
         id: crypto.randomUUID(),
-        babyId: '1',
-        type,
+        babyId: baby?.id || '1',
+        type: 'sleep',
         startedAt: new Date(),
-        endedAt: new Date(),
-        metadata: getDefaultMetadata(type),
+        endedAt: null,
+        metadata: {},
         createdAt: new Date(),
       };
-      setEvents((prev) => [...prev, newEvent]);
-
-      // Show brief confirmation (could be a toast)
-      console.log(`Logged ${type} at ${new Date().toLocaleTimeString()}`);
+      addEvent(newEvent);
+      setEvents(getEvents());
+      showToast('sleep started', () => {
+        // Undo would delete the event
+        setEvents(getEvents().filter((e) => e.id !== newEvent.id));
+      });
     }
-  };
+  }, [baby, showToast]);
 
-  const handleTapPrediction = (type: EventType) => {
-    // Tapping a prediction logs it
-    handleTapEvent(type);
-  };
+  const handleQuickLog = useCallback((type: EventType) => {
+    const newEvent: BabyEvent = {
+      id: crypto.randomUUID(),
+      babyId: baby?.id || '1',
+      type,
+      startedAt: new Date(),
+      endedAt: new Date(),
+      metadata: getDefaultMetadata(type),
+      createdAt: new Date(),
+    };
+    addEvent(newEvent);
+    setEvents(getEvents());
+
+    const labels: Record<string, string> = {
+      feed: 'fed!',
+      diaper: 'diaper changed!',
+      play: 'play logged!',
+      meds: 'meds logged!',
+      pump: 'pump logged!',
+    };
+    showToast(labels[type] || 'logged!');
+  }, [baby, showToast]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-muted lowercase-ui">loading...</p>
+      </div>
+    );
+  }
+
+  if (!baby) {
+    return null; // Will redirect to onboarding
+  }
+
+  // Get current state for hero card
+  const lastSleep = getLastEventOfType('sleep');
+  const ongoingSleep = getOngoingEvent('sleep');
+  const heroState = getHeroState(lastSleep, ongoingSleep);
+
+  // Get predictions for "coming up"
+  const predictions = getPredictions(events, baby.birthDate);
+  const comingUpItems = predictions
+    .filter((p) => p.type !== 'sleep') // Sleep is handled by hero
+    .slice(0, 2)
+    .map((p) => ({
+      type: p.type,
+      minutesUntil: (p.predictedAt.getTime() - Date.now()) / (1000 * 60),
+      lastEvent: getLastEventOfType(p.type),
+    }));
+
+  // Get today's events for summary
+  const todayEvents = getEventsForDay(new Date());
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <Header babyName={DEMO_BABY.name} />
+      <Header babyName={baby.name} birthDate={baby.birthDate} />
 
-      <div className="divider" />
+      <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
 
-      <main className="flex-1 flex flex-col">
-        <NextUp predictions={predictions} onTapPrediction={handleTapPrediction} />
+      {activeTab === 'now' && (
+        <main className="flex-1 flex flex-col py-6">
+          {/* Hero Card */}
+          <HeroCard
+            state={heroState.state}
+            time={heroState.time}
+            guidance={heroState.guidance}
+            action={heroState.action}
+            onAction={handleSleepAction}
+            isActive={!!ongoingSleep}
+          />
 
-        <div className="divider" />
+          <div className="divider my-6" />
 
-        <QuickLog onTapEvent={handleTapEvent} activeEvent={activeEvent} />
-      </main>
+          {/* Coming Up */}
+          <ComingUp items={comingUpItems} onTap={handleQuickLog} />
 
-      <DailySummary events={events} />
+          <div className="divider my-2" />
+
+          {/* Quick Log */}
+          <QuickLog onTap={handleQuickLog} />
+
+          <div className="flex-1" />
+
+          {/* Daily Summary */}
+          <DailySummary events={todayEvents} />
+        </main>
+      )}
+
+      {activeTab === 'history' && (
+        <main className="flex-1 flex items-center justify-center">
+          <p className="text-muted lowercase-ui">history coming soon</p>
+        </main>
+      )}
+
+      {activeTab === 'patterns' && (
+        <main className="flex-1 flex items-center justify-center">
+          <p className="text-muted lowercase-ui">
+            keep logging, learning your patterns...
+          </p>
+        </main>
+      )}
+
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   );
 }

@@ -9,6 +9,8 @@ import { QuickLog } from '@/components/QuickLog';
 import { DailySummary } from '@/components/DailySummary';
 import { TabNav } from '@/components/TabNav';
 import { ToastContainer } from '@/components/Toast';
+import { HistoryView } from '@/components/HistoryView';
+import { PatternsView } from '@/components/PatternsView';
 import {
   getBaby,
   getEvents,
@@ -192,17 +194,11 @@ export default function Dashboard() {
       )}
 
       {activeTab === 'history' && (
-        <main className="flex-1 flex items-center justify-center">
-          <p className="text-muted lowercase-ui">history coming soon</p>
-        </main>
+        <HistoryView />
       )}
 
       {activeTab === 'patterns' && (
-        <main className="flex-1 flex items-center justify-center">
-          <p className="text-muted lowercase-ui">
-            keep logging, learning your patterns...
-          </p>
-        </main>
+        <PatternsView babyName={baby.name} />
       )}
 
       <ToastContainer toasts={toasts} onRemove={removeToast} />
